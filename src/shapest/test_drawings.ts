@@ -1,0 +1,1 @@
+D:/repos/shapemod/shapezio-mods/src/shapest-mk2/ts/shape/test_drawings.ts
