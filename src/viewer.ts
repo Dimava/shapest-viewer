@@ -1,5 +1,6 @@
 
 
+import { PropOptionsWith } from '@dimava/vue-prop-decorator-a-variation';
 import { SzLayer, ISzLayer, SzLayerQuad, SzInfo, color, quadShape } from './shapest/layer.js'
 import { SzContext2D } from './shapest/SzContext2D.js';
 
@@ -23,7 +24,9 @@ let layer = SzInfo.quad.exampleLayer('circle')
 // new SzLayer(testTemplate);
 
 
-let data = Vue.reactive({ layer });
+let data = Vue.reactive({
+	layer, layers: [layer]
+});
 Object.assign(globalThis, { layer, data });
 // let layer = SzLayer.createTest();
 
@@ -32,7 +35,7 @@ Object.assign(globalThis, { layer, data });
 
 @GlobalComponent({
 	watch: {
-		layer: {
+		layers: {
 			handler: function (val) {
 				this.redraw();
 			},
@@ -41,7 +44,8 @@ Object.assign(globalThis, { layer, data });
 	}
 })
 class LayerCanvasVue extends VueImpl.with(makeClass({
-	layer: SzLayer,
+	layer: [SzLayer],
+	layers: [Array] as any as PropOptionsWith<SzLayer[], never, false>,
 	size: Number,
 })) {
 	@Template
@@ -66,7 +70,14 @@ class LayerCanvasVue extends VueImpl.with(makeClass({
 	redraw() {
 		if (!this.ctx) return;
 		this.ctx.clear();
-		this.layer.drawCenteredNormalized(this.ctx);
+		if (this.layer) {
+			this.layer.drawCenteredNormalized(this.ctx);
+		}
+		if (this.layers) {
+			this.layers.map((e, i) => {
+				e.drawCenteredLayerScaled(this.ctx!, i);
+			})
+		}
 	}
 }
 
@@ -82,22 +93,24 @@ class QuadEditorVue extends VueImpl.with(makeClass({
 			<a-row>
 				<LayerCanvasVue :size="64" :layer="layer" />
 				&emsp;
-				<LayerCanvasVue :size="32"
-					v-for="${q} of ${this.allQuads}"
-					:layer="${this.quadLayer(q)}"
-					:class="${this.quad.shape == q ? 'selected' : 'unselected'}"
-					@click="${this.quad.shape = q}" />
-				&emsp;
-				<LayerCanvasVue :size="32"
-					v-for="${c} of ${this.allColors}"
-					:layer="${this.colorLayer(c)}"
-					:class="${this.quad.color == c ? 'selected' : 'unselected'}"
-					@click="${this.quad.color = c}" />
-				&emsp;
-				<a-slider
-					range :min="0" :max="30"
-					:value="[quad.from, quad.to]" @change="setFromTo($event)"
-					style="width: 300px" />
+				<div style="line-height:0" >
+					<LayerCanvasVue :size="32"
+						v-for="${q} of ${this.allQuads}"
+						:layer="${this.quadLayer(q)}"
+						:class="${this.quad.shape == q ? 'selected' : 'unselected'}"
+						@click="${this.quad.shape = q}" />
+					<br>
+					<LayerCanvasVue :size="32"
+						v-for="${c} of ${this.allColors}"
+						:layer="${this.colorLayer(c)}"
+						:class="${this.quad.color == c ? 'selected' : 'unselected'}"
+						@click="${this.quad.color = c}" />
+					<br>
+					<a-slider
+						range :min="0" :max="30" :marks="${{ 0: '', 6: '', 12: '', 18: '', 24: '', 30: '' }}"
+						:value="[quad.from, quad.to]" @change="setFromTo($event)"
+						style="width: 300px" />
+				</div>
 			</a-row>
 		`;
 	}
@@ -105,7 +118,6 @@ class QuadEditorVue extends VueImpl.with(makeClass({
 		return new SzLayer({ quads: [this.quad] });
 	}
 	get allColors() {
-		console.log(SzInfo.color.colorList)
 		return SzInfo.color.colorList;
 	}
 	get allQuads() {
@@ -129,32 +141,41 @@ class QuadEditorVue extends VueImpl.with(makeClass({
 
 
 class LayerVue extends VueImpl.with(makeClass({
+	layers: Array as any as PropOptionsWith<SzLayer[], never, true>,
 	layer: SzLayer,
 })) {
 	@Template
 	get _t() {
 		let quad = this.layer.quads[0];
-		let k = '' as keyof typeof this.shapes;
 		return `
 			<APP>
 				<h1> Shapest viewer </h1>
 				<a-row>
 					<a-col>
-						<LayerCanvasVue :size="256" :layer="layer" />
+						<LayerCanvasVue :size="256" :layers="layers" />
+						<template v-for="(l, i) of layers">
+							<br v-if="i % 2 == 0">
+							<LayerCanvasVue :size="128" :layer="l"
+								:class="i == selectedLayer ? 'selected' : 'unselected'"
+								@click="selectedLayer = i"
+								/>
+						</template>
+						<br>
+						<button @click="${this.popLayer}"> - </button>
+						<button @click="${this.pushLayer}"> + </button>
 					</a-col>
 					<a-col>
 						<QuadEditorVue
-								v-for="${quad} of ${this.layer.quads}"
-								:quad="quad" />
+							v-for="(${quad}, i) of ${this.layers[this.selectedLayer].quads}" :key="selectedLayer + i*10"
+							:quad="quad" />
+						<button @click="${this.popQuad}"> - </button>
+						<button @click="${this.pushQuad}"> + </button>
 					</a-col>
 				</a-row>
-				<br>
-				 {${layer.quads}}
-
 			</APP>
 		`;
 	};
-
+	selectedLayer = 0;
 
 	mounted() {
 		this.draw();
@@ -170,21 +191,20 @@ class LayerVue extends VueImpl.with(makeClass({
 		this.layer.drawCenteredNormalized(this.ctx);
 		return '';
 	}
-	get shapes() {
-		return {
-			'●': 'circle', '■': 'square',
-		}
-	}
-	get colors() {
-		return {
-			r: 'red', g: 'green', b: 'blue'
-		}
-	}
 
 	setFromTo(quad: SzLayerQuad, v: [number, number]) {
 		quad.from = v[0];
 		quad.to = v[1];
 	}
+
+	popQuad() { this.layers[this.selectedLayer].quads.pop(); }
+	pushQuad() {
+		let from = this.layers[this.selectedLayer].quads.slice(-1)[0]?.to ?? 0;
+		this.layers[this.selectedLayer].quads.push(new SzLayerQuad({ from, to: from + 6 }));
+	}
+
+	popLayer() { this.layers.pop(); }
+	pushLayer() { this.layers.push(new SzLayer()); }
 }
 
 createApp(LayerVue, data).use(antd).mount('body');
