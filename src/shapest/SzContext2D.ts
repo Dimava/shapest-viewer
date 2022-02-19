@@ -7,6 +7,7 @@ export type char = string & { _?: char };
 export type styleString = string & { _?: styleString };
 
 
+
 export class SzContext2D {
 	static fromCanvas(cv: HTMLCanvasElement) {
 		let ctx = cv.getContext('2d')!;
