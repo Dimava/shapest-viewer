@@ -1,7 +1,7 @@
 
 
 import { PropOptionsWith } from '@dimava/vue-prop-decorator-a-variation';
-import { SzLayer, ISzLayer, SzLayerQuad, SzInfo, color, quadShape } from './shapest/layer.js'
+import { SzLayer, ISzLayer, SzLayerQuad, SzInfo, color, quadShape, SzLayerArea } from './shapest/layer.js'
 import { SzContext2D } from './shapest/SzContext2D.js';
 
 
@@ -20,14 +20,17 @@ const testTemplate: ISzLayer = {
 	],
 }
 
-let layer = SzInfo.quad.exampleLayer('circle')
+let layer =// new SzLayer();
+	SzLayer.fromShortKey('q!C-06C-6cC-ciC-io|a!su06su6csucisuio|c!')
+// SzInfo.quad.exampleLayer('circle');
+// new SzLayer();
 // new SzLayer(testTemplate);
 
-
-let data = Vue.reactive({
+let rawData = {
 	layer, layers: [layer]
-});
-Object.assign(globalThis, { layer, data });
+}
+let data = Vue.reactive({ source: rawData });
+Object.assign(globalThis, { layer, data, rawData });
 // let layer = SzLayer.createTest();
 
 // layer.drawCenteredNormalized(sctx);
@@ -83,7 +86,8 @@ class LayerCanvasVue extends VueImpl.with(makeClass({
 
 @GlobalComponent
 class QuadEditorVue extends VueImpl.with(makeClass({
-	quad: SzLayerQuad,
+	quad: [SzLayerQuad] as any as PropOptionsWith<SzLayerQuad, never, true>,
+	area: [SzLayerArea] as any as PropOptionsWith<SzLayerArea, never, true>,
 })) {
 	@Template
 	get _t() {
@@ -91,31 +95,47 @@ class QuadEditorVue extends VueImpl.with(makeClass({
 		let q = this.allQuads[0];
 		return `
 			<a-row>
-				<LayerCanvasVue :size="64" :layer="layer" />
+				<LayerCanvasVue :size="64" :layer="layer" :key="layer.getHash()" />
 				&emsp;
 				<div style="line-height:0" >
-					<LayerCanvasVue :size="32"
+					<LayerCanvasVue :size="32" v-if="quad"
 						v-for="${q} of ${this.allQuads}"
+						:title="${q}"
 						:layer="${this.quadLayer(q)}"
 						:class="${this.quad.shape == q ? 'selected' : 'unselected'}"
 						@click="${this.quad.shape = q}" />
 					<br>
-					<LayerCanvasVue :size="32"
+					<LayerCanvasVue :size="32" v-if="area"
 						v-for="${c} of ${this.allColors}"
+						:title="${c}"
 						:layer="${this.colorLayer(c)}"
-						:class="${this.quad.color == c ? 'selected' : 'unselected'}"
-						@click="${this.quad.color = c}" />
+						:class="${this.area.color == c ? 'selected' : 'unselected'}"
+						@click="${this.area.color = c}" />
 					<br>
 					<a-slider
 						range :min="0" :max="30" :marks="${{ 0: '', 6: '', 12: '', 18: '', 24: '', 30: '' }}"
-						:value="[quad.from, quad.to]" @change="setFromTo($event)"
+						v-model:value="fromTo"
 						style="width: 300px" />
 				</div>
 			</a-row>
 		`;
 	}
+	rnd = 0;
 	get layer() {
-		return new SzLayer({ quads: [this.quad] });
+		this.rnd;
+		if (this.quad) {
+			return new SzLayer({
+				quads: [this.quad],
+				areas: [new SzLayerArea({ from: 0, to: 24, color: 'grey', shape: 'sector' })],
+			});
+		}
+		if (this.area) {
+			return new SzLayer({
+				quads: [new SzLayerQuad({ to: 24 })],
+				areas: [this.area],
+			});
+		}
+		return SzInfo.color.exampleLayer('grey');
 	}
 	get allColors() {
 		return SzInfo.color.colorList;
@@ -129,24 +149,27 @@ class QuadEditorVue extends VueImpl.with(makeClass({
 	quadLayer(shape: quadShape) {
 		return SzInfo.quad.exampleLayer(shape);
 	}
-	setFromTo([from, to]: [number, number]) {
-		if (this.quad.to == to) {
-			this.quad.to += from - this.quad.from;
-			this.quad.from = from;
+	get fromTo(): [number, number] {
+		let e = this.quad || this.area;
+		return [e.from, e.to];
+	}
+	set fromTo([from, to]: [number, number]) {
+		let e = this.quad || this.area;
+		if (e.to == to) {
+			e.to += from - e.from;
+			e.from = from;
 		} else {
-			this.quad.to = to;
+			e.to = to;
 		}
 	}
 }
 
 
 class LayerVue extends VueImpl.with(makeClass({
-	layers: Array as any as PropOptionsWith<SzLayer[], never, true>,
-	layer: SzLayer,
+	source: null as any as PropOptionsWith<{ layers: SzLayer[] }, never, true>,
 })) {
 	@Template
 	get _t() {
-		let quad = this.layer.quads[0];
 		return `
 			<APP>
 				<h1> Shapest viewer </h1>
@@ -157,54 +180,80 @@ class LayerVue extends VueImpl.with(makeClass({
 							<br v-if="i % 2 == 0">
 							<LayerCanvasVue :size="128" :layer="l"
 								:class="i == selectedLayer ? 'selected' : 'unselected'"
-								@click="selectedLayer = i"
+								@click="selectedLayerIndex = i"
 								/>
 						</template>
 						<br>
 						<button @click="${this.popLayer}"> - </button>
 						<button @click="${this.pushLayer}"> + </button>
+						<br>
+						<input :value="${this.hash}" @change="hash=$event.target.value" style="width: 100%;font-family: monospace;font-size: small;" />
 					</a-col>
 					<a-col>
 						<QuadEditorVue
-							v-for="(${quad}, i) of ${this.layers[this.selectedLayer].quads}" :key="selectedLayer + i*10"
+							v-for="(quad, i) of selectedLayer.quads" :key="selectedLayerIndex + i*10"
 							:quad="quad" />
 						<button @click="${this.popQuad}"> - </button>
 						<button @click="${this.pushQuad}"> + </button>
+						<QuadEditorVue
+							v-for="(area, i) of selectedLayer.areas" :key="selectedLayerIndex + i*10"
+							:area="area" />
+						<button @click="${this.popArea}"> - </button>
+						<button @click="${this.pushArea}"> + </button>
 					</a-col>
 				</a-row>
 			</APP>
 		`;
 	};
-	selectedLayer = 0;
+	get layers() {
+		return this.source.layers;
+	}
+	selectedLayerIndex = 0;
+	get selectedLayer() {
+		return this.layers[this.selectedLayerIndex];
+	}
 
 	mounted() {
-		this.draw();
-		Vue.watch(this.layer, () => this.draw(), { deep: true });
+		// this.pushQuad();
+		// this.pushQuad();
+		// this.pushQuad();
+		// this.pushQuad();
 	}
+
 	ctx: SzContext2D | null = null;
-	draw() {
-		if (!this.ctx) {
-			if (!this.$refs.cv) return;
-			this.ctx = SzContext2D.fromCanvas(this.$refs.cv as any);
-		}
-		this.ctx.clear();
-		this.layer.drawCenteredNormalized(this.ctx);
-		return '';
-	}
 
 	setFromTo(quad: SzLayerQuad, v: [number, number]) {
 		quad.from = v[0];
 		quad.to = v[1];
 	}
 
-	popQuad() { this.layers[this.selectedLayer].quads.pop(); }
+	popQuad() {
+		this.selectedLayer.quads.pop();
+	}
 	pushQuad() {
-		let from = this.layers[this.selectedLayer].quads.slice(-1)[0]?.to ?? 0;
-		this.layers[this.selectedLayer].quads.push(new SzLayerQuad({ from, to: from + 6 }));
+		let from = this.selectedLayer.quads.slice(-1)[0]?.to ?? 0;
+		this.selectedLayer.quads.push(new SzLayerQuad({ from, to: from + 6 }));
+	}
+	popArea() {
+		this.selectedLayer.areas.pop();
+	}
+	pushArea() {
+		let from = this.selectedLayer.areas.slice(-1)[0]?.to ?? 0;
+		this.selectedLayer.areas.push(new SzLayerArea({ from, to: from + 6 }));
 	}
 
 	popLayer() { this.layers.pop(); }
-	pushLayer() { this.layers.push(new SzLayer()); }
+	pushLayer() {
+		this.layers.push(
+			SzLayer.fromShortKey('q!C-06C-6cC-ciC-io|a!su06su6csucisuio|c!')
+		);
+	}
+	get hash() {
+		return 'sz!' + this.layers.map(e => e.clone().getHash()).join(':');
+	}
+	set hash(v) {
+		this.source.layers = v.slice(3).split(':').map(SzLayer.fromShortKey);
+	}
 }
 
 createApp(LayerVue, data).use(antd).mount('body');

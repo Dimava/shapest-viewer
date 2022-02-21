@@ -1,6 +1,1 @@
-
-
-
-interface ObjectConstructor {
-	fromEntries<K extends string | number | symbol, V>(entries: readonly (readonly [K, V])[]): Record<K, V>;
-}
+D:/repos/shapemod/shapezio-mods/src/shapest-mk2/ts/shape/typesafe.d.ts
